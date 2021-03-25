@@ -2,6 +2,7 @@ from django.shortcuts import render, get_object_or_404
 from django.core.paginator import Paginator ,PageNotAnInteger ,EmptyPage
 
 from .models import Album, Artist, Booking, Contact
+from .forms import ContactForm
 
 def index(request):
     albums = Album.objects.filter(available=True).order_by('-created_at')[:12]
@@ -32,8 +33,43 @@ def detail(request, album_id):
         'album_title': album.title,
         'artists_name': artists_name,
         'album_id': album.id,
-        'thumbnail': album.picture
+        'thumbnail': album.picture,
     }
+    if request.method == 'POST':
+
+        form=ContactForm(request.POST)
+        if form.is_valid() :
+            email = request.POST.get('email')
+            name = request.POST.get('name')
+      
+        
+
+            contact = Contact.objects.filter(email=email)
+            if not contact.exists():
+                contact = Contact.objects.create(
+                    email=email,
+                    name=name
+                )
+
+
+            album = get_object_or_404(Album, id=album_id)
+            booking = Booking.objects.create(
+                contact=contact,
+                album=album
+            )
+
+            album.available = False
+            album.save()
+            context = {
+                'album_title': album.title
+            }
+            return render(request, 'store/merci.html', context)
+        else:
+            context['errors']=form.errors.items()
+    
+    else:
+        form=ContactForm()
+    context['form']=form
     return render(request,'store/detail.html',context)
 
 def search(request):
