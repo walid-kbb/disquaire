@@ -1,8 +1,8 @@
 from django.shortcuts import render, get_object_or_404
 from django.core.paginator import Paginator ,PageNotAnInteger ,EmptyPage
-
+from django.db import transaction, IntegrityError
 from .models import Album, Artist, Booking, Contact
-from .forms import ContactForm
+from .forms import ContactForm, ParagraphErrorList
 
 def index(request):
     albums = Album.objects.filter(available=True).order_by('-created_at')[:12]
@@ -37,38 +37,43 @@ def detail(request, album_id):
     }
     if request.method == 'POST':
 
-        form=ContactForm(request.POST)
+        form=ContactForm(request.POST, error_class=ParagraphErrorList)
         if form.is_valid() :
-            email = request.POST.get('email')
-            name = request.POST.get('name')
+            email = form.cleaned_data['email']
+            name = form.cleaned_data['name']
       
-        
+            try :
+                
+                with transaction.atomic():
+                    
+                    contact = Contact.objects.filter(email=email)
+                    if not contact.exists():
+                        contact = Contact.objects.create(
+                            email=email,
+                            name=name
+                        )
+                    else : 
+                        contact=contact.first()
 
-            contact = Contact.objects.filter(email=email)
-            if not contact.exists():
-                contact = Contact.objects.create(
-                    email=email,
-                    name=name
-                )
+                    album = get_object_or_404(Album, id=album_id)
+                    booking = Booking.objects.create(
+                        contact=contact,
+                        album=album
+                    )
 
-
-            album = get_object_or_404(Album, id=album_id)
-            booking = Booking.objects.create(
-                contact=contact,
-                album=album
-            )
-
-            album.available = False
-            album.save()
-            context = {
-                'album_title': album.title
-            }
-            return render(request, 'store/merci.html', context)
-        else:
-            context['errors']=form.errors.items()
+                    album.available = False
+                    album.save()
+                    context = {
+                        'album_title': album.title
+                    }
+                    return render(request, 'store/merci.html', context)
+            except IntegrityError:
+                form.errors['internal'] = "Une erreur interne est apparue. Merci de recommencer votre requête."
+            
     
     else:
         form=ContactForm()
+    context['errors']=form.errors.items()
     context['form']=form
     return render(request,'store/detail.html',context)
 
